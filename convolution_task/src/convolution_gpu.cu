@@ -124,20 +124,126 @@ __global__ void gpu_convolutionGrayImage_gm_d(const float *inputImage,
 
 // mode 2 (gray): using global memory and constant memory
 __global__ void gpu_convolutionGrayImage_gm_cm_d(const float *inputImage,
-    float *outputImage, int iWidth, int iHeight, int kRadiusX,
-    int kRadiusY, size_t iPitch) {
-
-  // ### implement me ###
+  float *outputImage, int iWidth, int iHeight, int kRadiusX,
+  int kRadiusY, size_t iPitch) {
+  
+  const int kWidth = (kRadiusX << 1) + 1;
+  const int kHeight = (kRadiusY << 1) + 1;
+  
+  int i_kern, j_kern;
+  int x, y;
+  float tmp = 0;
+  
+  int i_img = blockIdx.x*blockDim.x + threadIdx.x;
+  int j_img = blockIdx.y*blockDim.y + threadIdx.y;
+  
+  // ### implement a convolution ###
+  if (i_img >= 0 && i_img < iWidth && j_img >= 0 && j_img < iHeight){
+    for (i_kern = 0; i_kern < kWidth; ++i_kern) {
+      for (j_kern = 0; j_kern < kHeight; ++j_kern) {
+        x = i_img + (i_kern - (kWidth / 2));
+        y = j_img + (j_kern - (kHeight / 2));
+        
+        if (x < 0) {
+          x = 0;
+        }
+        else if (x >= iWidth) {
+          x = iWidth - 1;
+        }
+        if (y < 0) {
+      	  y = 0;
+        }
+        else if (y >= iHeight) {
+          y = iHeight - 1;
+        }
+        tmp += constKernel[j_kern * kWidth + i_kern] * inputImage[y * iPitch + x];
+      }
+    }
+    outputImage[j_img * iPitch + i_img] = tmp;
+  }
 
 }
 
-// mode 3 (gray): using shared memory for image and globel memory for kernel access
+// mode 3 (gray): using shared memory for image and global memory for kernel access
 __global__ void gpu_convolutionGrayImage_sm_d(const float *inputImage,
     const float *kernel, float *outputImage, int iWidth, int iHeight,
     int kRadiusX, int kRadiusY, size_t iPitch, size_t kPitch) {
   // make use of the constant MAXSHAREDMEMSIZE in order to define the shared memory size
+  
+  const int kWidth = (kRadiusX << 1) + 1;
+  const int kHeight = (kRadiusY << 1) + 1;
+  
+  int i_img = blockIdx.x*blockDim.x + threadIdx.x;
+  int j_img = blockIdx.y*blockDim.y + threadIdx.y;
+  int global_idx = j_img*iPitch + i_img; 
+  
+  int tileW = (blockDim.x + 2*kRadiusX);
+  int tileH = (blockDim.y + 2*kRadiusY);
+  int tot = tileW * tileH;
+  int loops = (int) ceilf((float)tot / (float)(blockDim.x * blockDim.y));
+  
+  int num_threads = blockDim.x * blockDim.y;
+  
+  // extended tile: block + 2 radius
+  __shared__ float tile[MAXSHAREDMEMSIZE];
 
-  // ### implement me ### 
+  int local_idx = threadIdx.y*blockDim.x + threadIdx.x;
+  
+  int shifted_x_index = i_img - kRadiusX;
+  int shifted_y_index = j_img - kRadiusY;
+  
+  int xx, yy;
+  int cur_loc_idx, cur_global_idx;
+  
+  int cur_shifted_x_index;
+  int cur_shifted_y_index;
+  
+  for (int i = 0; i < loops; ++i) {
+    cur_loc_idx = local_idx + num_threads * i;
+    if (cur_loc_idx < tot) {
+      yy = cur_loc_idx / tileW;
+      xx = cur_loc_idx - yy * tileW;
+      
+      cur_shifted_x_index = shifted_x_index + xx;
+      cur_shifted_y_index = shifted_y_index + yy;
+      
+      if (cur_shifted_x_index < 0) {
+        cur_shifted_x_index = 0;
+      }
+      else if (cur_shifted_x_index >= iWidth) {
+        cur_shifted_x_index = iWidth - 1;
+      }
+      if (cur_shifted_y_index < 0) {
+        cur_shifted_y_index = 0;
+      }
+      else if (cur_shifted_y_index >= iHeight) {
+        cur_shifted_y_index = iHeight - 1;
+      }
+      
+      cur_global_idx = cur_shifted_x_index + cur_shifted_y_index * iPitch;
+      
+      tile[cur_loc_idx] = inputImage[cur_global_idx];
+    }
+  }
+  
+	__syncthreads();
+  
+  int i_kern, j_kern;
+  int x, y;
+  float tmp = 0;
+  
+  // ### implement a convolution ###
+  if (i_img >= 0 && i_img < iWidth && j_img >= 0 && j_img < iHeight){
+    for (i_kern = 0; i_kern < kWidth; ++i_kern) {
+      for (j_kern = 0; j_kern < kHeight; ++j_kern) {
+        x = kRadiusX + threadIdx.x + (i_kern - (kWidth  / 2));
+        y = kRadiusY + threadIdx.y + (j_kern - (kHeight / 2));
+        
+        tmp += kernel[j_kern * kPitch + i_kern] * tile[y * tileW + x];
+      }
+    }
+    outputImage[global_idx] = tmp;
+  }
 
 }
 
