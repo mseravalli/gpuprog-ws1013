@@ -187,6 +187,10 @@ __global__ void gpu_convolutionGrayImage_sm_d(const float *inputImage,
   const int loops = (int)ceilf((float)t_tot / (float)threads);
   
   const int local_idx = threadIdx.y * blockDim.x + threadIdx.x;
+
+  const int block_top =  blockIdx.x*blockDim.x;
+  const int block_left = blockIdx.y*blockDim.y;
+
   int t_x, t_y, i_x, i_y;
   
   int t_idx = 0;
@@ -194,11 +198,11 @@ __global__ void gpu_convolutionGrayImage_sm_d(const float *inputImage,
   for (int i = 0; i < loops; ++i) {
     t_idx = (local_idx + i * threads);
     if (t_idx >= 0 && t_idx < t_tot) {
-      t_x = t_idx % t_w;
-      t_y = t_idx / t_h;
+      t_x = t_idx % t_w - kRadiusX;
+      t_y = t_idx / t_h - kRadiusY;
       
-      i_x = t_x;
-      i_y = t_y;
+      i_x = block_top  + t_x;
+      i_y = block_left + t_y;
       
       if (i_x < 0) {
         i_x = 0;
@@ -218,21 +222,21 @@ __global__ void gpu_convolutionGrayImage_sm_d(const float *inputImage,
   __syncthreads();
   
 //  outputImage[global_idx] = 0;
-  outputImage[global_idx] = tile[(kRadiusY + threadIdx.y)*t_w + kRadiusX + threadIdx.x];
+//  outputImage[global_idx] = tile[(kRadiusY + threadIdx.y)*t_w + kRadiusX + threadIdx.x];
 
-//  int x, y;
-//  float tmp = 0;
-//  if (global_x >= 0 && global_x < iWidth && global_y >= 0 && global_y < iHeight){
-//    for (int i_kern = 0; i_kern < k_w; ++i_kern) {
-//      for (int j_kern = 0; j_kern < k_h; ++j_kern) {
-//        x = kRadiusX + threadIdx.x + (i_kern - (k_w / 2));
-//        y = kRadiusY + threadIdx.y + (j_kern - (k_h / 2));
-//        
-//        tmp += kernel[j_kern * kPitch + i_kern] * tile[y * t_w + x];
-//      }
-//    }
-//    outputImage[global_idx] = tmp;
-//  }
+  int x, y;
+  float tmp = 0;
+  if (global_x >= 0 && global_x < iWidth && global_y >= 0 && global_y < iHeight){
+    for (int i_kern = 0; i_kern < k_w; ++i_kern) {
+      for (int j_kern = 0; j_kern < k_h; ++j_kern) {
+        x = kRadiusX + threadIdx.x + (i_kern - (k_w / 2));
+        y = kRadiusY + threadIdx.y + (j_kern - (k_h / 2));
+        
+        tmp += kernel[j_kern * kPitch + i_kern] * tile[y * t_w + x];
+      }
+    }
+    outputImage[global_idx] = tmp;
+  }
   
 }
 
