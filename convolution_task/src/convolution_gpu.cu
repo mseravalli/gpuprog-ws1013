@@ -221,8 +221,7 @@ __global__ void gpu_convolutionGrayImage_sm_d(const float *inputImage,
   
   __syncthreads();
   
-//  outputImage[global_idx] = 0;
-//  outputImage[global_idx] = tile[(kRadiusY + threadIdx.y)*t_w + kRadiusX + threadIdx.x];
+  outputImage[global_idx] = 0;
 
   int x, y;
   float tmp = 0;
@@ -246,7 +245,72 @@ __global__ void gpu_convolutionGrayImage_sm_cm_d(const float *inputImage,
     int kRadiusY, size_t iPitch) {
   // make use of the constant MAXSHAREDMEMSIZE in order to define the shared memory size
 
-  // ### implement me ### 
+  __shared__ float tile[MAXSHAREDMEMSIZE];
+  const int k_w = (kRadiusX << 1)  + 1;
+  const int k_h = (kRadiusY << 1) + 1;
+  
+  const int t_w = blockDim.x + (2 * kRadiusX);
+  const int t_h = blockDim.y + (2 * kRadiusY);
+  const int t_tot = t_w * t_h;
+
+  const int global_x = blockIdx.x*blockDim.x + threadIdx.x;
+  const int global_y = blockIdx.y*blockDim.y + threadIdx.y;
+  const int global_idx = global_y * iPitch + global_x;
+  
+  const int threads = blockDim.x * blockDim.y;
+  
+  const int loops = (int)ceilf((float)t_tot / (float)threads);
+  
+  const int local_idx = threadIdx.y * blockDim.x + threadIdx.x;
+
+  const int block_top =  blockIdx.x*blockDim.x;
+  const int block_left = blockIdx.y*blockDim.y;
+
+  int t_x, t_y, i_x, i_y;
+  
+  int t_idx = 0;
+  
+  for (int i = 0; i < loops; ++i) {
+    t_idx = (local_idx + i * threads);
+    if (t_idx >= 0 && t_idx < t_tot) {
+      t_x = t_idx % t_w - kRadiusX;
+      t_y = t_idx / t_h - kRadiusY;
+      
+      i_x = block_top  + t_x;
+      i_y = block_left + t_y;
+      
+      if (i_x < 0) {
+        i_x = 0;
+      } else if (i_x >= iWidth) {
+        i_x = iWidth - 1;
+      }
+      if (i_y < 0) {
+        i_y = 0;
+      } else if (i_y >= iHeight) {
+        i_y = iHeight - 1;
+      }
+      
+      tile[t_idx] = inputImage[i_y*iPitch + i_x];
+    }
+  }
+  
+  __syncthreads();
+  
+  outputImage[global_idx] = 0;
+
+  int x, y;
+  float tmp = 0;
+  if (global_x >= 0 && global_x < iWidth && global_y >= 0 && global_y < iHeight){
+    for (int i_kern = 0; i_kern < k_w; ++i_kern) {
+      for (int j_kern = 0; j_kern < k_h; ++j_kern) {
+        x = kRadiusX + threadIdx.x + (i_kern - (k_w / 2));
+        y = kRadiusY + threadIdx.y + (j_kern - (k_h / 2));
+        
+        tmp += constKernel[j_kern * k_w + i_kern] * tile[y * t_w + x];
+      }
+    }
+    outputImage[global_idx] = tmp;
+  }
 
 }
 
@@ -255,7 +319,72 @@ __global__ void gpu_convolutionGrayImage_dsm_cm_d(const float *inputImage,
     float *outputImage, int iWidth, int iHeight, int kRadiusX,
     int kRadiusY, size_t iPitch) {
 
-  // ### implement me ###  
+  extern __shared__ float tile[];
+  const int k_w = (kRadiusX << 1)  + 1;
+  const int k_h = (kRadiusY << 1) + 1;
+  
+  const int t_w = blockDim.x + (2 * kRadiusX);
+  const int t_h = blockDim.y + (2 * kRadiusY);
+  const int t_tot = t_w * t_h;
+
+  const int global_x = blockIdx.x*blockDim.x + threadIdx.x;
+  const int global_y = blockIdx.y*blockDim.y + threadIdx.y;
+  const int global_idx = global_y * iPitch + global_x;
+  
+  const int threads = blockDim.x * blockDim.y;
+  
+  const int loops = (int)ceilf((float)t_tot / (float)threads);
+  
+  const int local_idx = threadIdx.y * blockDim.x + threadIdx.x;
+
+  const int block_top =  blockIdx.x*blockDim.x;
+  const int block_left = blockIdx.y*blockDim.y;
+
+  int t_x, t_y, i_x, i_y;
+  
+  int t_idx = 0;
+  
+  for (int i = 0; i < loops; ++i) {
+    t_idx = (local_idx + i * threads);
+    if (t_idx >= 0 && t_idx < t_tot) {
+      t_x = t_idx % t_w - kRadiusX;
+      t_y = t_idx / t_h - kRadiusY;
+      
+      i_x = block_top  + t_x;
+      i_y = block_left + t_y;
+      
+      if (i_x < 0) {
+        i_x = 0;
+      } else if (i_x >= iWidth) {
+        i_x = iWidth - 1;
+      }
+      if (i_y < 0) {
+        i_y = 0;
+      } else if (i_y >= iHeight) {
+        i_y = iHeight - 1;
+      }
+      
+      tile[t_idx] = inputImage[i_y*iPitch + i_x];
+    }
+  }
+  
+  __syncthreads();
+  
+  outputImage[global_idx] = 0;
+
+  int x, y;
+  float tmp = 0;
+  if (global_x >= 0 && global_x < iWidth && global_y >= 0 && global_y < iHeight){
+    for (int i_kern = 0; i_kern < k_w; ++i_kern) {
+      for (int j_kern = 0; j_kern < k_h; ++j_kern) {
+        x = kRadiusX + threadIdx.x + (i_kern - (k_w / 2));
+        y = kRadiusY + threadIdx.y + (j_kern - (k_h / 2));
+        
+        tmp += constKernel[j_kern * k_w + i_kern] * tile[y * t_w + x];
+      }
+    }
+    outputImage[global_idx] = tmp;
+  }
 
 }
 
