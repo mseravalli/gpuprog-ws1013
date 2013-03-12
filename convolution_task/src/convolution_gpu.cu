@@ -169,82 +169,71 @@ __global__ void gpu_convolutionGrayImage_sm_d(const float *inputImage,
     const float *kernel, float *outputImage, int iWidth, int iHeight,
     int kRadiusX, int kRadiusY, size_t iPitch, size_t kPitch) {
   // make use of the constant MAXSHAREDMEMSIZE in order to define the shared memory size
-  
-  const int kWidth = (kRadiusX << 1) + 1;
-  const int kHeight = (kRadiusY << 1) + 1;
-  
-  int i_img = blockIdx.x*blockDim.x + threadIdx.x;
-  int j_img = blockIdx.y*blockDim.y + threadIdx.y;
-  int global_idx = j_img*iPitch + i_img; 
-  
-  int tileW = (blockDim.x + 2*kRadiusX);
-  int tileH = (blockDim.y + 2*kRadiusY);
-  int tot = tileW * tileH;
-  int loops = (int) ceilf((float)tot / (float)(blockDim.x * blockDim.y));
-  
-  int num_threads = blockDim.x * blockDim.y;
-  
-  // extended tile: block + 2 radius
-  __shared__ float tile[MAXSHAREDMEMSIZE];
 
-  int local_idx = threadIdx.y*blockDim.x + threadIdx.x;
+  __shared__ float tile[MAXSHAREDMEMSIZE];
+  const int k_w = (kRadiusX << 1)  + 1;
+  const int k_h = (kRadiusY << 1) + 1;
   
-  int shifted_x_index = i_img - kRadiusX;
-  int shifted_y_index = j_img - kRadiusY;
+  const int t_w = blockDim.x + (2 * kRadiusX);
+  const int t_h = blockDim.y + (2 * kRadiusY);
+  const int t_tot = t_w * t_h;
+
+  const int global_x = blockIdx.x*blockDim.x + threadIdx.x;
+  const int global_y = blockIdx.y*blockDim.y + threadIdx.y;
+  const int global_idx = global_y * iPitch + global_x;
   
-  int xx, yy;
-  int cur_loc_idx, cur_global_idx;
+  const int threads = blockDim.x * blockDim.y;
   
-  int cur_shifted_x_index;
-  int cur_shifted_y_index;
+  const int loops = (int)ceilf((float)t_tot / (float)threads);
+  
+  const int local_idx = threadIdx.y * blockDim.x + threadIdx.x;
+  int t_x, t_y, i_x, i_y;
+  
+  int t_idx = 0;
   
   for (int i = 0; i < loops; ++i) {
-    cur_loc_idx = local_idx + num_threads * i;
-    if (cur_loc_idx < tot) {
-      yy = cur_loc_idx / tileW;
-      xx = cur_loc_idx - yy * tileW;
+    t_idx = (local_idx + i * threads);
+    if (t_idx >= 0 && t_idx < t_tot) {
+      t_x = t_idx % t_w;
+      t_y = t_idx / t_h;
       
-      cur_shifted_x_index = shifted_x_index + xx;
-      cur_shifted_y_index = shifted_y_index + yy;
+      i_x = t_x;
+      i_y = t_y;
       
-      if (cur_shifted_x_index < 0) {
-        cur_shifted_x_index = 0;
+      if (i_x < 0) {
+        i_x = 0;
+      } else if (i_x >= iWidth) {
+        i_x = iWidth - 1;
       }
-      else if (cur_shifted_x_index >= iWidth) {
-        cur_shifted_x_index = iWidth - 1;
-      }
-      if (cur_shifted_y_index < 0) {
-        cur_shifted_y_index = 0;
-      }
-      else if (cur_shifted_y_index >= iHeight) {
-        cur_shifted_y_index = iHeight - 1;
+      if (i_y < 0) {
+        i_y = 0;
+      } else if (i_y >= iHeight) {
+        i_y = iHeight - 1;
       }
       
-      cur_global_idx = cur_shifted_x_index + cur_shifted_y_index * iPitch;
-      
-      tile[cur_loc_idx] = inputImage[cur_global_idx];
+      tile[t_idx] = inputImage[i_y*iPitch + i_x];
     }
   }
   
-	__syncthreads();
+  __syncthreads();
   
-  int i_kern, j_kern;
-  int x, y;
-  float tmp = 0;
-  
-  // ### implement a convolution ###
-  if (i_img >= 0 && i_img < iWidth && j_img >= 0 && j_img < iHeight){
-    for (i_kern = 0; i_kern < kWidth; ++i_kern) {
-      for (j_kern = 0; j_kern < kHeight; ++j_kern) {
-        x = kRadiusX + threadIdx.x + (i_kern - (kWidth  / 2));
-        y = kRadiusY + threadIdx.y + (j_kern - (kHeight / 2));
-        
-        tmp += kernel[j_kern * kPitch + i_kern] * tile[y * tileW + x];
-      }
-    }
-    outputImage[global_idx] = tmp;
-  }
+//  outputImage[global_idx] = 0;
+  outputImage[global_idx] = tile[(kRadiusY + threadIdx.y)*t_w + kRadiusX + threadIdx.x];
 
+//  int x, y;
+//  float tmp = 0;
+//  if (global_x >= 0 && global_x < iWidth && global_y >= 0 && global_y < iHeight){
+//    for (int i_kern = 0; i_kern < k_w; ++i_kern) {
+//      for (int j_kern = 0; j_kern < k_h; ++j_kern) {
+//        x = kRadiusX + threadIdx.x + (i_kern - (k_w / 2));
+//        y = kRadiusY + threadIdx.y + (j_kern - (k_h / 2));
+//        
+//        tmp += kernel[j_kern * kPitch + i_kern] * tile[y * t_w + x];
+//      }
+//    }
+//    outputImage[global_idx] = tmp;
+//  }
+  
 }
 
 // mode 4 (gray): using shared memory for image and constant memory for kernel access
