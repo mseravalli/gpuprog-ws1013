@@ -344,6 +344,7 @@ __global__ void gpu_convolutionGrayImage_dsm_cm_d(const float *inputImage,
   
   int t_idx = 0;
   
+  // transfer data in shared memory
   for (int i = 0; i < loops; ++i) {
     t_idx = (local_idx + i * threads);
     if (t_idx >= 0 && t_idx < t_tot) {
@@ -528,14 +529,83 @@ void gpu_convolutionRGB(const float *inputImage, const float *kernel,
 __global__ void gpu_convolutionInterleavedRGB_dsm_cm_d(
     const float3 *inputImage, float3 *outputImage, int iWidth, int iHeight,
     int kRadiusX, int kRadiusY, size_t iPitchBytes) {
-  const int x = blockIdx.x * blockDim.x + threadIdx.x;
-  const int y = blockIdx.y * blockDim.y + threadIdx.y;
+  extern __shared__ float3 t[];
+  const int k_w = (kRadiusX << 1)  + 1;
+  const int k_h = (kRadiusY << 1) + 1;
+  
+  const int t_w = blockDim.x + (2 * kRadiusX);
+  const int t_h = blockDim.y + (2 * kRadiusY);
+  const int t_tot = t_w * t_h;
 
-  float3 value = make_float3(0.0f, 0.0f, 0.0f);
+  const int global_x = blockIdx.x*blockDim.x + threadIdx.x;
+  const int global_y = blockIdx.y*blockDim.y + threadIdx.y;
+//  const int global_idx = global_y * iPitch + global_x;
+  
+  const int threads = blockDim.x * blockDim.y;
+  
+  const int loops = (int)ceilf((float)t_tot / (float)threads);
+  
+  const int local_idx = threadIdx.y * blockDim.x + threadIdx.x;
 
-  // ### implement me ### 
+  const int block_top =  blockIdx.x*blockDim.x;
+  const int block_left = blockIdx.y*blockDim.y;
 
-  *((float3*) (((char*) outputImage) + y * iPitchBytes) + x) = value;
+  int t_x, t_y, i_x, i_y;
+  
+  int t_idx = 0;
+
+  // transfer data in shared memory
+  for (int i = 0; i < loops; ++i) {
+    t_idx = (local_idx + i * threads);
+    if (t_idx >= 0 && t_idx < t_tot) {
+      t_x = t_idx % t_w;
+      t_y = t_idx / t_h;
+      
+      i_x = block_top  + t_x - kRadiusX;
+      i_y = block_left + t_y - kRadiusY;
+      
+      if (i_x < 0) {
+        i_x = 0;
+      } else if (i_x >= iWidth) {
+        i_x = iWidth - 1;
+      }
+      if (i_y < 0) {
+        i_y = 0;
+      } else if (i_y >= iHeight) {
+        i_y = iHeight - 1;
+      }
+      
+//      tile[t_idx] = inputImage[i_y*iPitch + i_x];
+      *((float3*) (((char*) t) + t_y * t_w * sizeof(float3)) + t_x) = 
+        *((float3*) (((char*) inputImage) + i_y * iPitchBytes) + i_x);
+    }
+  }
+  
+  __syncthreads();
+
+  // convolution 
+  int x, y;
+  float3 tmp = make_float3(0.0f, 0.0f, 0.0f);
+  float3 img_val = make_float3(0.0f, 0.0f, 0.0f);
+  if (global_x >= 0 && global_x < iWidth && global_y >= 0 && global_y < iHeight){
+    for (int i_kern = 0; i_kern < k_w; ++i_kern) {
+      for (int j_kern = 0; j_kern < k_h; ++j_kern) {
+        x = kRadiusX + threadIdx.x + (i_kern - (k_w / 2));
+        y = kRadiusY + threadIdx.y + (j_kern - (k_h / 2));
+        
+        //tmp += constKernel[j_kern * k_w + i_kern] * tile[y * t_w + x];
+        img_val = *((float3*) (((char*) t) + y * t_w * sizeof(float3)) + x);
+        tmp.x += constKernel[j_kern * k_w + i_kern] * img_val.x;
+        tmp.y += constKernel[j_kern * k_w + i_kern] * img_val.y;
+        tmp.z += constKernel[j_kern * k_w + i_kern] * img_val.z;
+      }
+    }
+    //outputImage[global_idx] = tmp;
+    *((float3*) (((char*) outputImage) + global_y * iPitchBytes) + global_x) = tmp;
+  }
+
+//  float3 value = make_float3(0.0f, 0.0f, 0.0f);
+//  *((float3*) (((char*) outputImage) + global_y * iPitchBytes) + global_x) = value;
 }
 
 __global__ void gpu_ImageFloat3ToFloat4_d(const float3 *inputImage,
