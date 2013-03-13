@@ -626,7 +626,32 @@ __global__ void gpu_ImageFloat3ToFloat4_d(const float3 *inputImage,
 __global__ void gpu_convolutionInterleavedRGB_tex_cm_d(float3 *outputImage,
     int iWidth, int iHeight, int kRadiusX, int kRadiusY, size_t oPitchBytes) {
 
-  // ### implement me ### 
+  const int x = blockIdx.x*blockDim.x + threadIdx.x;
+  const int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+  if (x >= iWidth || y >= iHeight)
+    return;
+
+  const float xx = (float) (x - kRadiusX) + TEXTURE_OFFSET;
+  const float yy = (float) (y - kRadiusY) + TEXTURE_OFFSET;
+  const int kWidth = (kRadiusX << 1) + 1;
+  const int kHeight = (kRadiusY << 1) + 1;
+//  float value = 0.0f;
+  float3 value = make_float3(0.0f, 0.0f, 0.0f);
+  float4 img_val = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+  for (int yk = 0; yk < kHeight; yk++) {
+    for (int xk = 0; xk < kWidth; xk++) {
+//      value += tex2D(tex_Image, xx - xk, yy - yk) * constKernel[yk * kWidth + xk];
+      img_val = tex2D(tex_ImageF4, xx - xk, yy - yk);
+      value.x += constKernel[yk * kWidth + xk] * img_val.x;
+      value.y += constKernel[yk * kWidth + xk] * img_val.y;
+      value.z += constKernel[yk * kWidth + xk] * img_val.z;
+    }
+  }
+  
+//  outputImage[y * iPitch + x] = value;
+  *((float3*) (((char*) outputImage) + y * oPitchBytes) + x) = value;
 
 }
 
