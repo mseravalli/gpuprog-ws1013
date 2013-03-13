@@ -8,9 +8,9 @@
 *
 * 
 \******* PLEASE ENTER YOUR CORRECT STUDENT LOGIN, NAME AND ID BELOW *********/
-const char* studentLogin = "p010";
-const char* studentName  = "John Doe";
-const int   studentID    = 1234567;
+const char* studentLogin = "p107";
+const char* studentName  = "Marco Seravalli";
+const int   studentID    = 3626387;
 /****************************************************************************\
 *
 * In this file the following methods have to be edited or completed:
@@ -86,8 +86,14 @@ __global__ void diffuse_linear_isotrop_shared(
 
   __syncthreads();
 
-
-  // ### implement me ###
+  // diffusion
+  if (x < nx && y < ny) {
+    d_output[idx] = u[tx][ty] + timeStep * ( u[tx - 1][ty] +
+                                             u[tx + 1][ty] +
+                                             u[tx][ty - 1] +
+                                             u[tx][ty + 1] -
+                                             4*u[tx][ty] );
+  }
 
 }
 
@@ -132,7 +138,14 @@ __global__ void diffuse_linear_isotrop_shared
   __syncthreads();
 
  
-  // ### implement me ###
+  // diffusion
+  if (x < nx && y < ny) {
+    imgValue.x = u[tx][ty].x + timeStep * ( u[tx-1][ty].x + u[tx+1][ty].x + u[tx][ty-1].x + u[tx][ty+1].x - 4*u[tx][ty].x );
+    imgValue.y = u[tx][ty].y + timeStep * ( u[tx-1][ty].y + u[tx+1][ty].y + u[tx][ty-1].y + u[tx][ty+1].y - 4*u[tx][ty].y );
+    imgValue.z = u[tx][ty].z + timeStep * ( u[tx-1][ty].z + u[tx+1][ty].z + u[tx][ty-1].z + u[tx][ty+1].z - 4*u[tx][ty].z );
+    const char* outP = (char*)d_output + y*pitchBytes + x*sizeof(float3);
+    *( (float3*)outP ) = imgValue;
+  }
 
 }
 
