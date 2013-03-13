@@ -8,9 +8,9 @@
 *
 * 
 \******* PLEASE ENTER YOUR CORRECT STUDENT LOGIN, NAME AND ID BELOW *********/
-const char* studentLogin = "p010";
-const char* studentName  = "John Doe";
-const int   studentID    = 1234567;
+const char* studentLogin = "p107";
+const char* studentName  = "Marco Servalli";
+const int   studentID    = 3626387;
 /****************************************************************************\
 *
 * In this file the following methods have to be edited or completed:
