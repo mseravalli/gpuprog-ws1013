@@ -431,7 +431,7 @@ __global__ void compute_tv_diffusivity_joined_shared
 
   //compute the magnitude
   float3 dIdx, dIdy, magn, diff;
-  float avg, avg_l, avg_r, avg_u, avg_d;
+  float avg_l, avg_r, avg_u, avg_d;
 
   if (x < nx && y < ny) {
     avg_r = (u[threadIdx.x+2][threadIdx.y+1].x + u[threadIdx.x+2][threadIdx.y+1].y + u[threadIdx.x+2][threadIdx.y+1].z ) / 3.0;
@@ -448,16 +448,15 @@ __global__ void compute_tv_diffusivity_joined_shared
     dIdy.z = dIdy.x;
 
     magn.x = sqrt(dIdx.x*dIdx.x + dIdy.x*dIdy.x);
-    magn.y = sqrt(dIdx.y*dIdx.y + dIdy.y*dIdy.y);
-    magn.z = sqrt(dIdx.z*dIdx.z + dIdy.z*dIdy.z);
+    magn.y = magn.x;
+    magn.z = magn.x;
 
     diff.x = 1.0 / sqrt(magn.x*magn.x + TV_EPSILON);
-    diff.y = 1.0 / sqrt(magn.y*magn.y + TV_EPSILON);
-    diff.z = 1.0 / sqrt(magn.z*magn.z + TV_EPSILON);
+    diff.y = diff.x;
+    diff.z = diff.x;
 
     const char* outP = (char*)d_output + y*pitchBytes + x*sizeof(float3);
     *( (float3*)outP ) = diff;
-    //d_output[idx] = 1.0 / sqrt(magn*magn + TV_EPSILON);
   }
 
 }
