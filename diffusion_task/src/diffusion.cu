@@ -225,10 +225,18 @@ __global__ void diffuse_nonlinear_isotrop_shared
 
   __syncthreads();
 
-  
-  // ### implement me ###
-
-
+  //diffusion
+  if (x < nx && y < ny) {
+    float phi_r = 0.5*(g[tx+1][ty] + g[tx][ty]);
+    float phi_l = 0.5*(g[tx-1][ty] + g[tx][ty]);
+    float phi_u = 0.5*(g[tx][ty+1] + g[tx][ty]);
+    float phi_d = 0.5*(g[tx][ty-1] + g[tx][ty]);
+    d_output[idx] = u[tx][ty] + timeStep * (phi_r * u[tx+1][ty] +
+                                            phi_l * u[tx-1][ty] +
+                                            phi_u * u[tx][ty+1] +
+                                            phi_d * u[tx][ty-1] -
+                                            (phi_r+phi_l+phi_u+phi_d) * u[tx][ty]);
+  }
 }
 
 
@@ -254,8 +262,6 @@ __global__ void diffuse_nonlinear_isotrop_shared
 
   __shared__ float3 u[DIFF_BW+2][DIFF_BH+2];
   __shared__ float3 g[DIFF_BW+2][DIFF_BH+2];
-  float3 value;
-
 
   // load data into shared memory
   if (x < nx && y < ny) {
@@ -300,10 +306,34 @@ __global__ void diffuse_nonlinear_isotrop_shared
   __syncthreads();
 
   
-  // ### implement me ###
+  //diffusion
+  if (x < nx && y < ny) {
+    float3 phi_r, phi_l, phi_u, phi_d, diff;
+    phi_r.x = 0.5*(g[tx+1][ty].x + g[tx][ty].x);
+    phi_r.y = 0.5*(g[tx+1][ty].y + g[tx][ty].y);
+    phi_r.z = 0.5*(g[tx+1][ty].z + g[tx][ty].z);
+
+    phi_l.x = 0.5*(g[tx-1][ty].x + g[tx][ty].x);
+    phi_l.y = 0.5*(g[tx-1][ty].y + g[tx][ty].y);
+    phi_l.z = 0.5*(g[tx-1][ty].z + g[tx][ty].z);
+
+    phi_u.x = 0.5*(g[tx][ty+1].x + g[tx][ty].x);
+    phi_u.y = 0.5*(g[tx][ty+1].y + g[tx][ty].y);
+    phi_u.z = 0.5*(g[tx][ty+1].z + g[tx][ty].z);
+
+    phi_d.x = 0.5*(g[tx][ty-1].x + g[tx][ty].x);
+    phi_d.y = 0.5*(g[tx][ty-1].y + g[tx][ty].y);
+    phi_d.z = 0.5*(g[tx][ty-1].z + g[tx][ty].z);
+
+    diff.x = u[tx][ty].x + timeStep * (phi_r.x * u[tx+1][ty].x + phi_l.x * u[tx-1][ty].x + phi_u.x * u[tx][ty+1].x + phi_d.x * u[tx][ty-1].x - (phi_r.x+phi_l.x+phi_u.x+phi_d.x) * u[tx][ty].x);
+    diff.y = u[tx][ty].y + timeStep * (phi_r.y * u[tx+1][ty].y + phi_l.y * u[tx-1][ty].y + phi_u.y * u[tx][ty+1].y + phi_d.y * u[tx][ty-1].y - (phi_r.y+phi_l.y+phi_u.y+phi_d.y) * u[tx][ty].y);
+    diff.z = u[tx][ty].z + timeStep * (phi_r.z * u[tx+1][ty].z + phi_l.z * u[tx-1][ty].z + phi_u.z * u[tx][ty+1].z + phi_d.z * u[tx][ty-1].z - (phi_r.z+phi_l.z+phi_u.z+phi_d.z) * u[tx][ty].z);
+
+    const char* outP = (char*)d_output + y*pitchBytes + x*sizeof(float3);
+    *( (float3*)outP ) = diff;
+  }
 
 }
-
 
 
 // diffusivity computation for modes 1-3 gray
@@ -345,7 +375,15 @@ __global__ void compute_tv_diffusivity_shared
  
   // make use of the constant TV_EPSILON
 
-  // ### implement me ###
+  //compute the magnitude and the diffusion
+  float dIdx, dIdy, magn;
+
+  if (x < nx && y < ny) {
+    dIdx = 0.5f*(u[threadIdx.x+2][threadIdx.y+1]-u[threadIdx.x][threadIdx.y+1]);
+    dIdy = 0.5f*(u[threadIdx.x+1][threadIdx.y+2]-u[threadIdx.x+1][threadIdx.y]);
+    magn = sqrt(dIdx*dIdx + dIdy*dIdy);
+    d_output[idx] = 1.0 / sqrt(magn*magn + TV_EPSILON);
+  }
 }
 
 
@@ -391,7 +429,36 @@ __global__ void compute_tv_diffusivity_joined_shared
   
   // make use of the constant TV_EPSILON
 
-  // ### implement me ###
+  //compute the magnitude
+  float3 dIdx, dIdy, magn, diff;
+  float avg, avg_l, avg_r, avg_u, avg_d;
+
+  if (x < nx && y < ny) {
+    avg_r = (u[threadIdx.x+2][threadIdx.y+1].x + u[threadIdx.x+2][threadIdx.y+1].y + u[threadIdx.x+2][threadIdx.y+1].z ) / 3.0;
+    avg_l = (u[threadIdx.x][threadIdx.y+1].x   + u[threadIdx.x][threadIdx.y+1].y   + u[threadIdx.x][threadIdx.y+1].z )   / 3.0;
+    avg_u = (u[threadIdx.x+1][threadIdx.y+2].x + u[threadIdx.x+1][threadIdx.y+2].y + u[threadIdx.x+1][threadIdx.y+2].z ) / 3.0;
+    avg_d = (u[threadIdx.x+1][threadIdx.y].x +   u[threadIdx.x+1][threadIdx.y].y +   u[threadIdx.x+1][threadIdx.y].z )   / 3.0;
+
+    dIdx.x = 0.5f*(avg_r - avg_l);
+    dIdx.y = dIdx.x;
+    dIdx.z = dIdx.x;
+
+    dIdy.x = 0.5f*(avg_u - avg_d);
+    dIdy.y = dIdy.x;
+    dIdy.z = dIdy.x;
+
+    magn.x = sqrt(dIdx.x*dIdx.x + dIdy.x*dIdy.x);
+    magn.y = sqrt(dIdx.y*dIdx.y + dIdy.y*dIdy.y);
+    magn.z = sqrt(dIdx.z*dIdx.z + dIdy.z*dIdy.z);
+
+    diff.x = 1.0 / sqrt(magn.x*magn.x + TV_EPSILON);
+    diff.y = 1.0 / sqrt(magn.y*magn.y + TV_EPSILON);
+    diff.z = 1.0 / sqrt(magn.z*magn.z + TV_EPSILON);
+
+    const char* outP = (char*)d_output + y*pitchBytes + x*sizeof(float3);
+    *( (float3*)outP ) = diff;
+    //d_output[idx] = 1.0 / sqrt(magn*magn + TV_EPSILON);
+  }
 
 }
 
@@ -438,7 +505,30 @@ __global__ void compute_tv_diffusivity_separate_shared
   
   // make use of the constant TV_EPSILON
 
-  // ### implement me ###
+  //compute the magnitude
+  float3 dIdx, dIdy, magn, diff;
+
+  if (x < nx && y < ny) {
+    dIdx.x = 0.5f*(u[threadIdx.x+2][threadIdx.y+1].x - u[threadIdx.x][threadIdx.y+1].x);
+    dIdx.y = 0.5f*(u[threadIdx.x+2][threadIdx.y+1].y - u[threadIdx.x][threadIdx.y+1].y);
+    dIdx.z = 0.5f*(u[threadIdx.x+2][threadIdx.y+1].z - u[threadIdx.x][threadIdx.y+1].z);
+
+    dIdy.x = 0.5f*(u[threadIdx.x+1][threadIdx.y+2].x - u[threadIdx.x+1][threadIdx.y].x);
+    dIdy.y = 0.5f*(u[threadIdx.x+1][threadIdx.y+2].y - u[threadIdx.x+1][threadIdx.y].y);
+    dIdy.z = 0.5f*(u[threadIdx.x+1][threadIdx.y+2].z - u[threadIdx.x+1][threadIdx.y].z);
+
+    magn.x = sqrt(dIdx.x*dIdx.x + dIdy.x*dIdy.x);
+    magn.y = sqrt(dIdx.y*dIdx.y + dIdy.y*dIdy.y);
+    magn.z = sqrt(dIdx.z*dIdx.z + dIdy.z*dIdy.z);
+
+    diff.x = 1.0 / sqrt(magn.x*magn.x + TV_EPSILON);
+    diff.y = 1.0 / sqrt(magn.y*magn.y + TV_EPSILON);
+    diff.z = 1.0 / sqrt(magn.z*magn.z + TV_EPSILON);
+
+    const char* outP = (char*)d_output + y*pitchBytes + x*sizeof(float3);
+    *( (float3*)outP ) = diff;
+    //d_output[idx] = 1.0 / sqrt(magn*magn + TV_EPSILON);
+  }
 
 }
 
