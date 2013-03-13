@@ -390,27 +390,26 @@ __global__ void gpu_convolutionGrayImage_dsm_cm_d(const float *inputImage,
 }
 
 // mode 6 (gray): using texture memory for image and constant memory for kernel access
-__global__ void gpu_convolutionGrayImage_tex_cm_d(float *outputImage,
-    int iWidth, int iHeight, int kRadiusX, int kRadiusY, size_t iPitch) {
+__global__ void gpu_convolutionGrayImage_tex_cm_d(float *outputImage, 
+  int iWidth, int iHeight, int kRadiusX, int kRadiusY, size_t iPitch)
+{
   const int x = blockIdx.x * blockDim.x + threadIdx.x;
   const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  if (x >= iWidth || y >= iHeight)
-    return;
+  if (x >= iWidth || y >= iHeight) return;
 
-  const float xx = (float) (x - kRadiusX) + TEXTURE_OFFSET;
-  const float yy = (float) (y - kRadiusY) + TEXTURE_OFFSET;
-  const int kWidth = (kRadiusX << 1) + 1;
-  const int kHeight = (kRadiusY << 1) + 1;
+  const float xx = (float)(x) + TEXTURE_OFFSET;
+  const float yy = (float)(y) + TEXTURE_OFFSET;
+  const int kWidth  = (kRadiusX<<1) + 1;
+  const int kHeight = (kRadiusY<<1) + 1;
   float value = 0.0f;
 
-  for (int yk = 0; yk < kHeight; yk++)
-    for (int xk = 0; xk < kWidth; xk++)
-      value += tex2D(tex_Image, xx - xk, yy - yk) * constKernel[yk
-          * kWidth + xk];
-
-  outputImage[y * iPitch + x] = value;
+  for (int yk = -kRadiusY; yk <= kRadiusY; yk++)
+    for (int xk = -kRadiusX; xk <= kRadiusX; xk++)
+      value += tex2D(tex_Image, xx-xk, yy-yk) * constKernel[(yk+kRadiusY)*kWidth + xk+kRadiusX];
+  outputImage[y*iPitch + x] = value;
 }
+
 
 void gpu_convolutionGrayImage(const float *inputImage, const float *kernel,
     float *outputImage, int iWidth, int iHeight, int kRadiusX,
@@ -640,13 +639,15 @@ __global__ void gpu_convolutionInterleavedRGB_tex_cm_d(float3 *outputImage,
   float3 value = make_float3(0.0f, 0.0f, 0.0f);
   float4 img_val = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-  for (int yk = 0; yk < kHeight; yk++) {
-    for (int xk = 0; xk < kWidth; xk++) {
+//  for (int yk = 0; yk < kHeight; yk++) {
+//    for (int xk = 0; xk < kWidth; xk++) {
+  for (int yk = -kRadiusY; yk <= kRadiusY; yk++) {
+    for (int xk = -kRadiusX; xk <= kRadiusX; xk++) {
 //      value += tex2D(tex_Image, xx - xk, yy - yk) * constKernel[yk * kWidth + xk];
       img_val = tex2D(tex_ImageF4, xx - xk, yy - yk);
-      value.x += constKernel[yk * kWidth + xk] * img_val.x;
-      value.y += constKernel[yk * kWidth + xk] * img_val.y;
-      value.z += constKernel[yk * kWidth + xk] * img_val.z;
+      value.x += constKernel[(yk+kRadiusY)*kWidth + xk+kRadiusX] * img_val.x;
+      value.y += constKernel[(yk+kRadiusY)*kWidth + xk+kRadiusX] * img_val.y;
+      value.z += constKernel[(yk+kRadiusY)*kWidth + xk+kRadiusX] * img_val.z;
     }
   }
   
