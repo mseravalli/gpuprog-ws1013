@@ -430,28 +430,23 @@ __global__ void compute_tv_diffusivity_joined_shared
   // make use of the constant TV_EPSILON
 
   //compute the magnitude
-  float3 dIdx, dIdy, magn, diff;
+  float dIdx, dIdy, magn;
+  float3 diff;
   float avg_l, avg_r, avg_u, avg_d;
 
   if (x < nx && y < ny) {
     avg_r = (u[threadIdx.x+2][threadIdx.y+1].x + u[threadIdx.x+2][threadIdx.y+1].y + u[threadIdx.x+2][threadIdx.y+1].z ) / 3.0;
     avg_l = (u[threadIdx.x][threadIdx.y+1].x   + u[threadIdx.x][threadIdx.y+1].y   + u[threadIdx.x][threadIdx.y+1].z )   / 3.0;
     avg_u = (u[threadIdx.x+1][threadIdx.y+2].x + u[threadIdx.x+1][threadIdx.y+2].y + u[threadIdx.x+1][threadIdx.y+2].z ) / 3.0;
-    avg_d = (u[threadIdx.x+1][threadIdx.y].x +   u[threadIdx.x+1][threadIdx.y].y +   u[threadIdx.x+1][threadIdx.y].z )   / 3.0;
+    avg_d = (u[threadIdx.x+1][threadIdx.y].x   + u[threadIdx.x+1][threadIdx.y].y   + u[threadIdx.x+1][threadIdx.y].z )   / 3.0;
 
-    dIdx.x = 0.5f*(avg_r - avg_l);
-    dIdx.y = dIdx.x;
-    dIdx.z = dIdx.x;
+    dIdx = 0.5f*(avg_r - avg_l);
 
-    dIdy.x = 0.5f*(avg_u - avg_d);
-    dIdy.y = dIdy.x;
-    dIdy.z = dIdy.x;
+    dIdy = 0.5f*(avg_u - avg_d);
 
-    magn.x = sqrt(dIdx.x*dIdx.x + dIdy.x*dIdy.x);
-    magn.y = magn.x;
-    magn.z = magn.x;
+    magn = dIdx*dIdx + dIdy*dIdy;
 
-    diff.x = 1.0 / sqrt(magn.x*magn.x + TV_EPSILON);
+    diff.x = 1.0 / sqrt(magn + TV_EPSILON);
     diff.y = diff.x;
     diff.z = diff.x;
 
